@@ -12,6 +12,7 @@ on:
 # permisos para leer/escribir en el repositorio
 permissions:
   contents: read
+  # packages: write
 
 # qué se tiene que ejecutar en este pipeline
 jobs:
