@@ -34,6 +34,9 @@ jobs:
     - name: Install dependencies
       run: |
         pip install -r src/requirements.txt
+    - name: Check linting
+      working-directory: src
+      run: ruff check .
     # actividad para realizar los tests, en este caso especifíco se determina en cual archivo (por defecto, `pytest`)
     - name: Test with pytest
       working-directory: src # sino se especifica en cual dyr, se realiza en la carpeta principal
