@@ -1,0 +1,41 @@
+# nombre para identificar el workflow
+name: Test and Build
+
+# eventos disparadores
+on:
+  # cuando haga un push en master o una pull request hacia la master
+  push:
+    branches: [ "main" ]
+#  pull_request:
+#    branches: [ "main" ]
+
+# permisos para leer/escribir en el repositorio
+permissions:
+  contents: read
+
+# qué se tiene que ejecutar en este pipeline
+jobs:
+  # disparadores de los diferentes trabajos (build por defecto)
+  test_and_build:
+    # indicador del os para el contenedor
+    runs-on: ubuntu-latest
+
+    # actividades que se realizaran paso a paso
+    steps:
+    # básico, leer el código de la rama
+    - uses: actions/checkout@v4
+    # indicar el tipo de versión del lenguaje
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.11"
+    # actividad para instalar las dependencias, se centra en instalar las bibliotecas, módulos o extensiones que
+    # requiere el proyecto para correr, en un caso sencillo únicamente `pip install -r requirements.txt`
+    - name: Install dependencies
+      run: |
+        pip install -r src/requirements.txt
+    # actividad para realizar los tests, en este caso especifíco se determina en cual archivo (por defecto, `pytest`)
+    - name: Test with pytest
+      working-directory: src # sino se especifica en cual dyr, se realiza en la carpeta principal
+      run: |
+        pytest tests.py
