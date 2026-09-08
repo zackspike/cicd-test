@@ -27,9 +27,9 @@ jobs:
     - uses: actions/checkout@v4
     # indicar el tipo de versión del lenguaje
     - name: Discord notification
-      uses: Ilshidur/action-discord@master
       env:
         DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+      uses: Ilshidur/action-discord@master
       with:
         args: 'Just for test.'
     - name: Set up Python 3.11
