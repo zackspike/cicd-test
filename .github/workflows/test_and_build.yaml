@@ -45,6 +45,13 @@ jobs:
         working-directory: src # sino se especifica en cual dyr, se realiza en la carpeta principal
         run: |
           pytest tests.py
+      - name: Discord notification
+        if: failure()
+        uses: Ilshidur/action-discord@master
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        with:
+          args: 'Fallo de implementación.'
     
   # CD - Solo si los tests pasan
   build-and-push:
