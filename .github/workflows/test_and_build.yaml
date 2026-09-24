@@ -5,7 +5,7 @@ name: Test and Build
 on:
   # cuando haga un push en master o una pull request hacia la master
   push:
-    branches: [ "main" ]
+    branches: [ "main"]
 #  pull_request:
 #    branches: [ "main" ]
 
@@ -44,9 +44,9 @@ jobs:
           pip install -r src/requirements.txt
 
 
-      #- name: Check linting
-      #  working-directory: src
-      #  run: ruff check .
+      - name: Check linting
+        working-directory: src
+        run: ruff check .
       # actividad para realizar los tests, en este caso especifíco se determina en cual archivo (por defecto, `pytest`)
 
       # 2. Ejecutar tests generando reporte XML de cobertura
