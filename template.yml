@@ -1,0 +1,238 @@
+# 'name': Nombre legible que identifica al workflow en la pestaña 'Actions' de GitHub.
+name: CI/CD Pipeline Template
+
+# 'on': Bloque que define los eventos desencadenadores (triggers) del workflow.
+on:
+  # 'push': Se activa automáticamente cuando se envían nuevos commits al repositorio.
+  push:
+    # 'branches': Filtra las ramas monitoreadas; en este caso, únicamente la rama principal 'main'.
+    branches: [ "main" ]
+
+  # 'pull_request': Se activa cuando se crea o actualiza un Pull Request hacia la rama objetivo.
+  pull_request:
+    # 'branches': Solo evalúa PRs destinados a integrarse en la rama principal 'main'.
+    branches: [ "main" ]
+
+  # 'workflow_dispatch': Permite disparar manualmente este pipeline desde la interfaz web o API de GitHub.
+  workflow_dispatch:
+
+  # 'schedule': Permite programar ejecuciones periódicas automáticas mediante sintaxis POSIX cron.
+  schedule:
+    # 'cron': Ejecución semanal cada domingo a las 00:00 UTC (minuto 0, hora 0, cualquier día del mes, cualquier mes, día 0=domingo).
+    - cron: '0 0 * * 0'
+
+# 'concurrency': Controla la concurrencia para evitar ejecuciones redundantes o colisiones de despliegue.
+concurrency:
+  # 'group': Agrupa ejecuciones por nombre de workflow y referencia git (rama o PR).
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # 'cancel-in-progress': Si es PR, cancela ejecuciones anteriores obsoletas. En 'main' no cancela para proteger el despliegue.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# 'jobs': Contenedor que agrupa los diferentes trabajos independientes que componen el pipeline.
+jobs:
+
+  # ----------------------------------------------------------------------------
+  # JOB 1: INTEGRACIÓN CONTINUA (CI) - Verificación, Pruebas y Calidad de Código
+  # ----------------------------------------------------------------------------
+  # 'test': Identificador único del job de pruebas y verificación de calidad.
+  test:
+    # 'name': Etiqueta visible del job, interpolando la versión de Python evaluada en la matriz.
+    name: Test (Python ${{ matrix.python-version }})
+    # 'runs-on': Define el sistema operativo del runner alojado por GitHub (Ubuntu Linux última versión).
+    runs-on: ubuntu-latest
+    # 'strategy': Define estrategias de ejecución avanzada como matrices de compatibilidad.
+    strategy:
+      # 'matrix': Lista de combinaciones de entornos que se ejecutarán en paralelo.
+      matrix:
+        # 'python-version': Define las versiones oficiales de Python contra las que se probará el código.
+        python-version: ["3.10", "3.11", "3.12"]
+    # 'permissions': Aplica el Principio de Menor Privilegio (PoLP) para proteger el repositorio.
+    permissions:
+      # 'contents: read': Permite exclusivamente clonar y leer el código fuente.
+      contents: read
+      # 'pull-requests: read': Permite leer metadatos de PRs requeridos por herramientas de análisis como Sonar.
+      pull-requests: read
+
+    # 'steps': Secuencia ordenada de tareas ejecutadas secuencialmente dentro del runner.
+    steps:
+      # 'name': Descripción humana del paso que clona el código fuente.
+      - name: Checkout repository
+        # 'uses': Invoca una acción oficial de GitHub para clonar el repositorio. Versión fijada v4.
+        uses: actions/checkout@v4
+        # 'with': Parámetros de configuración pasados a la acción.
+        with:
+          # 'fetch-depth: 0': Clona todo el historial de git (tags y commits), indispensable para SonarCloud/SonarQube.
+          fetch-depth: 0
+
+      # 'name': Descripción del paso que instala y configura el entorno de Python.
+      - name: Set up Python ${{ matrix.python-version }}
+        # 'uses': Acción oficial para preparar la versión deseada de Python en el runner. Versión fijada v5.
+        uses: actions/setup-python@v5
+        # 'with': Configuración del entorno de Python.
+        with:
+          # 'python-version': Toma dinámicamente la versión actual de la matriz (3.10, 3.11 o 3.12).
+          python-version: ${{ matrix.python-version }}
+          # 'cache': Habilita la caché nativa del gestor de paquetes pip para acelerar futuras ejecuciones.
+          cache: 'pip'
+          # 'cache-dependency-path': Archivo de dependencias cuya firma hash determinará la validez de la caché.
+          cache-dependency-path: 'src/requirements.txt'
+
+      # 'name': Descripción del paso que instala las dependencias de la aplicación y herramientas de test.
+      - name: Install dependencies
+        # 'run': Ejecuta comandos de shell en el runner. Actualiza pip e instala los paquetes requeridos.
+        run: |
+          pip install --upgrade pip
+          pip install -r src/requirements.txt
+
+      # 'name': Descripción del paso de análisis estático y linter con Ruff.
+      - name: Check linting
+        # 'working-directory': Define el directorio de trabajo donde reside el código a analizar.
+        working-directory: src
+        # 'run': Ejecuta ruff para validar formato, estilo y errores comunes de sintaxis en el código.
+        run: ruff check .
+
+      # 'name': Descripción del paso de pruebas unitarias y generación de reportes de cobertura.
+      - name: Test with pytest and generate coverage
+        # 'run': Ejecuta pytest generando simultáneamente cobertura XML, reporte visual HTML y reporte JUnit XML.
+        run: |
+          PYTHONPATH=src pytest --cov=src --cov-report=xml:coverage.xml --cov-report=html:htmlcov --junitxml=junit.xml src/tests.py
+
+      # 'name': Descripción del paso para almacenar reportes generados como artefactos de GitHub.
+      - name: Upload test and coverage artifacts
+        # 'if: always()': Garantiza que los reportes se preserven incluso si las pruebas fallan.
+        if: always()
+        # 'uses': Acción oficial para subir y guardar artefactos del workflow. Versión fijada v4.
+        uses: actions/upload-artifact@v4
+        # 'with': Parámetros del artefacto a subir.
+        with:
+          # 'name': Nombre único del artefacto por versión de Python para evitar colisiones en la matriz.
+          name: test-results-python-${{ matrix.python-version }}
+          # 'path': Rutas relativas de los archivos y directorios que formarán parte del artefacto descargable.
+          path: |
+            coverage.xml
+            junit.xml
+            htmlcov/
+          # 'retention-days': Días que GitHub conservará los archivos antes de eliminarlos automáticamente.
+          retention-days: 14
+          # 'if-no-files-found: warn': Emite una advertencia si algún archivo no existe sin abortar el job.
+          if-no-files-found: warn
+
+      # 'name': Descripción del paso de análisis de seguridad y calidad estática en SonarQube/SonarCloud.
+      - name: SonarQube Scan
+        # 'if': Ejecuta el análisis una sola vez (en Python 3.11) para optimizar recursos y evitar métricas redundantes.
+        if: matrix.python-version == '3.11'
+        # 'uses': Acción oficial actualizada de SonarSource (reemplaza la acción deprecada sonarcloud-github-action).
+        uses: SonarSource/sonarqube-scan-action@v8.2.2
+        # 'with': Parámetros adicionales para el escáner SonarScanner CLI.
+        with:
+          # 'args': Argumentos pasados al escáner: ruta del reporte de cobertura y bloqueo si falla el Quality Gate.
+          args: >
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.qualitygate.wait=true
+        # 'env': Inyección segura de secretos requeridos por SonarSource para autenticación.
+        env:
+          # 'GITHUB_TOKEN': Token proporcionado automáticamente por GitHub para sincronizar PRs y checks.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 'SONAR_TOKEN': Token de acceso configurado previamente en los Secrets del repositorio.
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      # 'name': Descripción del paso de notificación a Discord en caso de fallos en pruebas.
+      - name: Discord notification on failure
+        # 'if: failure()': Se ejecuta únicamente cuando alguno de los pasos anteriores en este job falla.
+        if: failure()
+        # 'uses': Acción para enviar mensajes a un canal de Discord mediante webhook. Versión estable fijada.
+        uses: Ilshidur/action-discord@0.4.0
+        # 'env': Variable de entorno que contiene el webhook secreto hacia el canal de Discord.
+        env:
+          # 'DISCORD_WEBHOOK': URL del webhook registrada de forma segura en GitHub Actions Secrets.
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        # 'with': Contenido del mensaje a publicar en Discord.
+        with:
+          # 'args': Texto personalizado informando la rama/ref y el usuario responsable del commit que falló.
+          args: 'Tests fallidos en ${{ github.ref_name }} por ${{ github.actor }}'
+
+
+  # ----------------------------------------------------------------------------
+  # JOB 2: ENTREGA CONTINUA (CD) - Empaquetado y Publicación de Contenedor Docker
+  # ----------------------------------------------------------------------------
+  # 'build-and-push': Identificador único del job de construcción y publicación de la imagen.
+  build-and-push:
+    # 'name': Nombre descriptivo que identifica este job en la interfaz de GitHub Actions.
+    name: Build and Push Docker Image
+    # 'needs: [test]': Establece dependencia estricta; este job solo inicia si TODOS los jobs de test tuvieron éxito.
+    needs: [test]
+    # 'if': Condición de seguridad; solo se despliega en commits directos a la rama 'main' (no en PRs ni otras ramas).
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # 'runs-on': Ejecutor en la nube con Ubuntu Linux.
+    runs-on: ubuntu-latest
+    # 'permissions': Define los accesos mínimos requeridos para este job de despliegue.
+    permissions:
+      # 'contents: read': Permite leer el código fuente y el Dockerfile.
+      contents: read
+      # 'packages: write': Permite publicar imágenes de contenedores en GitHub Packages (GHCR).
+      packages: write
+
+    # 'steps': Secuencia de pasos necesarios para construir y publicar la imagen de Docker.
+    steps:
+      # 'name': Descripción del paso de clonado del código.
+      - name: Checkout repository
+        # 'uses': Clona el repositorio para disponer del Dockerfile y el contexto de compilación.
+        uses: actions/checkout@v4
+
+      # 'name': Descripción del paso que inicializa Docker Buildx.
+      - name: Set up Docker Buildx
+        # 'uses': Prepara el motor avanzado de construcción Buildx que soporta caché y multi-plataforma.
+        uses: docker/setup-buildx-action@v3
+
+      # 'name': Descripción del paso de autenticación en GitHub Container Registry.
+      - name: Login to GitHub Container Registry
+        # 'uses': Acción oficial de Docker para realizar login seguro en registros de contenedores.
+        uses: docker/login-action@v4
+        # 'with': Credenciales requeridas para autenticarse en el registro.
+        with:
+          # 'registry': Dirección del registro de contenedores de GitHub.
+          registry: ghcr.io
+          # 'username': Usuario que ejecuta la acción (actor del commit o PR).
+          username: ${{ github.actor }}
+          # 'password': Token automático con permiso 'packages: write' para autorizar el push.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 'name': Descripción del paso de normalización del nombre del repositorio.
+      - name: Normalize repository name to lowercase
+        # 'run': GHCR exige estrictamente nombres en minúsculas; transforma cualquier mayúscula antes del build.
+        run: |
+          echo "IMAGE_NAME=ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      # 'name': Descripción del paso principal de compilación y publicación de la imagen.
+      - name: Build and push Docker Image
+        # 'uses': Acción oficial de Docker para construir y subir imágenes usando Buildx.
+        uses: docker/build-push-action@v7
+        # 'with': Configuración de la imagen, tags y sistema de caché.
+        with:
+          # 'context': Directorio raíz que se enviará al daemon de Docker como contexto de compilación.
+          context: .
+          # 'push: true': Indica que la imagen compilada debe publicarse en el registro remoto GHCR.
+          push: true
+          # 'tags': Genera simultáneamente la etiqueta 'latest' y una etiqueta inmutable con el SHA del commit.
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          # 'cache-from: type=gha': Importa capas previamente compiladas desde la caché de GitHub Actions.
+          cache-from: type=gha
+          # 'cache-to: type=gha,mode=max': Exporta todas las capas compiladas hacia la caché para acelerar futuros builds.
+          cache-to: type=gha,mode=max
+
+      # 'name': Descripción del paso de notificación final a Discord.
+      - name: Discord notification
+        # 'if: always()': Se ejecuta sin importar si el build fue exitoso o falló, informando el estado final.
+        if: always()
+        # 'uses': Notifica el resultado del despliegue en el canal de Discord configurado.
+        uses: Ilshidur/action-discord@0.4.0
+        # 'env': Inyecta el webhook secreto hacia Discord.
+        env:
+          # 'DISCORD_WEBHOOK': URL del webhook secreto.
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        # 'with': Configura el mensaje final con estado, commit y autor.
+        with:
+          # 'args': Reporta el estado de finalización del job ('success' o 'failure'), commit SHA y actor.
+          args: 'Pipeline finalizada con estado: ${{ job.status }} | Commit: ${{ github.sha }} | Autor: ${{ github.actor }}'
