@@ -6,8 +6,8 @@ on:
   # cuando haga un push en master o una pull request hacia la master
   push:
     branches: [ "main"]
-#  pull_request:
-#    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
